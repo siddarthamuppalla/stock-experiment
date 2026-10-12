@@ -1,0 +1,53 @@
+name: Backtest and deploy
+on:
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: 'Space-separated tickers (blank = Mag7 + SPX)'
+        required: false
+        default: ''
+      cost_bps:
+        description: 'Cost per trade side, basis points'
+        required: false
+        default: '0'
+  schedule:
+    - cron: '15 23 * * 1-5'
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+      - name: Download prices and run strategies
+        env:
+          TICKERS: ${{ inputs.tickers }}
+          COST: ${{ inputs.cost_bps }}
+        run: |
+          if [ -n "$TICKERS" ]; then
+            python run.py --tickers $TICKERS --cost-bps "${COST:-0}"
+          else
+            python run.py --cost-bps "${COST:-0}"
+          fi
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - id: deployment
+        uses: actions/deploy-pages@v4
